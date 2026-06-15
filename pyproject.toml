@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brave-search-lab"
+version = "0.1.0"
+description = "A friendly toolkit for the Brave Search API: typed client, CLI, FastAPI service, web-grounded Q&A, and a news trend monitor."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "brave-search-lab contributors" }]
+keywords = ["brave", "search", "api", "rag", "fastapi", "cli", "news"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+]
+dependencies = [
+    "requests>=2.28",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.39"]
+dev = ["pytest>=7", "pytest-cov", "ruff"]
+
+[project.scripts]
+bravelab = "bravelab.cli:main"
+
+[project.urls]
+Homepage = "https://github.com"
+"Brave Search API" = "https://brave.com/search/api/"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
