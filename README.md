@@ -16,6 +16,53 @@ The whole thing runs **out of the box with nothing but a free Brave API key** �
 
 ---
 
+## Demo
+
+All four commands, in one run:
+
+```console
+$ bravelab search "brave search api" --count 3
+ 1. Brave Search API  (3 days ago)
+    https://brave.com/search/api/
+    An independent index with billions of pages and a generous free tier.
+ 2. Brave Search API Pricing  (1 week ago)
+    https://brave.com/search/api/pricing
+    Free plan: 2,000 queries/month. Paid plans add news, AI snippets and higher limits.
+ 3. Getting started guide  (5 days ago)
+    https://api-dashboard.search.brave.com/
+    Create a subscription token and call the REST endpoint with an X-Subscription-Token header.
+
+$ bravelab ask "What is the Brave Search API?"
+Here's what the web says about "What is the Brave Search API?":
+
+An independent index with billions of pages and a generous free tier. [1] Free
+plan: 2,000 queries/month. Paid plans add news, AI snippets and higher limits. [2]
+Create a subscription token and call the REST endpoint with a token header. [3]
+
+Sources:
+  [1] Brave Search API - https://brave.com/search/api/
+  [2] Brave Search API Pricing - https://brave.com/search/api/pricing
+  [3] Getting started guide - https://api-dashboard.search.brave.com/
+
+$ bravelab monitor "openai" "anthropic" "mistral ai"
+TOPIC       BUZZ   ARTICLES  NEWEST     STATE
+------------------------------------------------
+openai       3.1         4      1.0h   🔥 hot
+anthropic    1.0         2     10.0h   🧊 quiet
+mistral ai   0.1         1     72.0h   🧊 quiet
+
+$ bravelab suggest "brave search api"
+brave search api python
+brave search api pricing
+brave search api vs google
+```
+
+> The `ask` output above is the zero-dependency extractive answerer (no LLM key).
+> Set `ANTHROPIC_API_KEY` and the same command returns a model-synthesized answer
+> with the same `[n]` citation contract.
+
+---
+
 ## Quickstart
 
 ```bash
@@ -93,61 +140,3 @@ curl "http://127.0.0.1:8000/ask?q=what+is+the+brave+search+api"
         │
         ▼
    Answer(text, sources[])
-```
-
-### The "buzz score", briefly
-
-Each topic's score combines **volume** (how many recent articles) with
-**freshness** via exponential decay — an article loses half its weight every 24h:
-
-```
-buzz = Σ  0.5 ^ (age_hours / 24)
-```
-
-So ten articles from last week score lower than three from this morning. It's a
-compact example of turning raw search output into a signal you could alert on.
-
----
-
-## Configuration
-
-| Variable | Required | Purpose |
-|---|---|---|
-| `BRAVE_API_KEY` | ✅ | Your Brave Search subscription token. |
-| `ANTHROPIC_API_KEY` | optional | If set (with `pip install ".[llm]"`), `ask` synthesizes answers with a model instead of the built-in extractive ranker. |
-| `BRAVELAB_MODEL` | optional | Override the model used for synthesis. |
-
----
-
-## Development
-
-```bash
-pip install -e ".[dev,llm]"
-make test     # pytest — fully mocked, no network, no API key needed
-make lint     # ruff
-make run-api  # uvicorn with reload
-```
-
-Tests stub the Brave HTTP layer (see `tests/conftest.py`), so CI is fast,
-deterministic, and never spends your quota. GitHub Actions runs the suite on
-Python 3.10–3.12.
-
-## Project layout
-
-```
-src/bravelab/
-  client.py    # BraveSearchClient: retries, backoff, caching
-  models.py    # WebResult / NewsResult / SearchResponse
-  cache.py     # TTLCache (on-disk, hashed keys)
-  rag.py       # answer_question(): ranking + citations, pluggable LLM
-  monitor.py   # TrendMonitor: freshness-weighted buzz score
-  cli.py       # argparse CLI -> `bravelab`
-  api.py       # FastAPI app
-tests/         # network-free unit tests
-examples/      # demo.py end-to-end script
-```
-
-## License
-
-MIT — see [LICENSE](LICENSE). Not affiliated with Brave Software; "Brave" is a
-trademark of its owner. This is an independent example project.
