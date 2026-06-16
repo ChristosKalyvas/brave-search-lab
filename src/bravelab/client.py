@@ -20,6 +20,8 @@ WEB_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 NEWS_ENDPOINT = "https://api.search.brave.com/res/v1/news/search"
 SUGGEST_ENDPOINT = "https://api.search.brave.com/res/v1/suggest/search"
 
+_DEFAULT_CACHE = object()  # sentinel: distinguishes "omitted" from "None"
+
 
 class BraveAPIError(RuntimeError):
     """Raised when the Brave API returns a non-success response."""
@@ -30,23 +32,13 @@ class BraveAPIError(RuntimeError):
 
 
 class BraveSearchClient:
-    """Typed wrapper over the Brave Search API with retries and caching.
-
-    Parameters
-    ----------
-    api_key:
-        Your subscription token. Falls back to ``$BRAVE_API_KEY``.
-    cache:
-        Optional :class:`TTLCache`. Pass ``None`` to disable caching.
-    max_retries:
-        How many times to retry on 429 / 5xx with exponential backoff.
-    """
+    """Typed wrapper over the Brave Search API with retries and caching."""
 
     def __init__(
         self,
         api_key: Optional[str] = None,
         *,
-        cache: Optional[TTLCache] = None,
+        cache: Any = _DEFAULT_CACHE,
         max_retries: int = 3,
         timeout: float = 15.0,
         session: Optional[requests.Session] = None,
@@ -57,7 +49,8 @@ class BraveSearchClient:
                 "No Brave API key. Pass api_key=... or set BRAVE_API_KEY. "
                 "Grab a free one at https://brave.com/search/api/"
             )
-        self.cache = cache if cache is not None else TTLCache()
+        # Omitted -> default on-disk cache; explicit None -> caching disabled.
+        self.cache = TTLCache() if cache is _DEFAULT_CACHE else cache
         self.max_retries = max_retries
         self.timeout = timeout
         self.session = session or requests.Session()
@@ -70,7 +63,6 @@ class BraveSearchClient:
             }
         )
 
-    # ----------------------------------------------------------------- core
     def _request(self, endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
         cache_key = endpoint + "?" + repr(sorted(params.items()))
         if self.cache:
@@ -88,7 +80,13 @@ class BraveSearchClient:
                     self.cache.set(cache_key, data)
                 return data
             last_msg = resp.text[:300]
-            # Retry only on rate-limit / transient server errors.
+            if resp.status_code == 400 and "OPTION_NOT_IN_PLAN" in resp.text:
+                raise BraveAPIError(
+                    400,
+                    "this endpoint isn't included in your Brave plan. The free "
+                    "tier covers Web + News search; Suggest is a separate "
+                    "subscription. See https://brave.com/search/api/",
+                )
             if resp.status_code in (429, 500, 502, 503) and attempt < self.max_retries:
                 retry_after = float(resp.headers.get("Retry-After", backoff))
                 time.sleep(retry_after)
@@ -97,7 +95,18 @@ class BraveSearchClient:
             raise BraveAPIError(resp.status_code, last_msg)
         raise BraveAPIError(429, last_msg)
 
-    # -------------------------------------------------------------- queries
+    @staticmethod
+    def _apply_site(query: str, site: Optional[str]) -> str:
+        """Scope a query to one domain via Brave's `site:` operator.
+
+        ``site`` may be a bare domain ("stackoverflow.com") or include the
+        operator already ("site:stackoverflow.com"); both work.
+        """
+        if not site:
+            return query
+        token = site if site.lower().startswith("site:") else f"site:{site}"
+        return f"{token} {query}".strip()
+
     def web(
         self,
         query: str,
@@ -105,12 +114,23 @@ class BraveSearchClient:
         count: int = 10,
         country: str = "us",
         search_lang: str = "en",
-        freshness: Optional[str] = None,  # pd (24h), pw (week), pm (month), py (year)
+        freshness: Optional[str] = None,
         safesearch: str = "moderate",
+        site: Optional[str] = None,
+        goggles: Optional[str] = None,
     ) -> list[WebResult]:
-        """Run a web search and return normalized :class:`WebResult` objects."""
+        """Run a web search and return normalized WebResult objects.
+
+        Parameters
+        ----------
+        site:
+            Restrict results to a single domain (Brave `site:` operator).
+        goggles:
+            A Goggle to re-rank/filter results -- a hosted Goggle URL or an
+            inline rule definition. See brave.com/search/api Goggles docs.
+        """
         params: dict[str, Any] = {
-            "q": query,
+            "q": self._apply_site(query, site),
             "count": max(1, min(count, 20)),
             "country": country,
             "search_lang": search_lang,
@@ -118,6 +138,8 @@ class BraveSearchClient:
         }
         if freshness:
             params["freshness"] = freshness
+        if goggles:
+            params["goggles"] = goggles
         data = self._request(WEB_ENDPOINT, params)
         results = (data.get("web") or {}).get("results", [])
         return [WebResult.from_api(r) for r in results]
@@ -142,14 +164,18 @@ class BraveSearchClient:
         return [NewsResult.from_api(r) for r in results]
 
     def suggest(self, query: str, *, count: int = 5, country: str = "us") -> list[str]:
-        """Autocomplete-style query suggestions."""
+        """Autocomplete-style query suggestions.
+
+        Note: Suggest is a separate Brave subscription, not part of the free
+        tier (the API returns OPTION_NOT_IN_PLAN otherwise).
+        """
         params = {"q": query, "count": count, "country": country}
         data = self._request(SUGGEST_ENDPOINT, params)
         results = (data.get("results") or [])
         return [r.get("query", "") for r in results if r.get("query")]
 
     def search(self, query: str, *, count: int = 10, **kw: Any) -> SearchResponse:
-        """Convenience: combine web + news into one :class:`SearchResponse`."""
+        """Convenience: combine web + news into one SearchResponse."""
         web = self.web(query, count=count, **{k: v for k, v in kw.items() if k != "freshness"})
         try:
             news = self.news(query, count=min(count, 5))

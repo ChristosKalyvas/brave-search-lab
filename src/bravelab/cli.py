@@ -3,6 +3,8 @@
 Examples
 --------
     bravelab search "rust web frameworks" --count 5
+    bravelab search "python asyncio" --site stackoverflow.com
+    bravelab search "climate" --goggle https://raw.githubusercontent.com/.../tech.goggle
     bravelab ask "who won the latest f1 race?"
     bravelab monitor "openai" "anthropic" "mistral ai"
     bravelab suggest "python async"
@@ -28,7 +30,13 @@ def _client() -> BraveSearchClient:
 
 def cmd_search(args: argparse.Namespace) -> int:
     client = _client()
-    results = client.web(args.query, count=args.count, freshness=args.freshness)
+    results = client.web(
+        args.query,
+        count=args.count,
+        freshness=args.freshness,
+        site=args.site,
+        goggles=args.goggle,
+    )
     if not results:
         print("No results.")
         return 0
@@ -76,6 +84,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("query")
     s.add_argument("--count", type=int, default=10)
     s.add_argument("--freshness", choices=["pd", "pw", "pm", "py"], default=None)
+    s.add_argument("--site", default=None, metavar="DOMAIN",
+                   help="restrict results to one domain (Brave site: operator)")
+    s.add_argument("--goggle", default=None, metavar="URL_OR_RULE",
+                   help="a Goggle URL or inline rule to re-rank/filter results")
     s.set_defaults(func=cmd_search)
 
     a = sub.add_parser("ask", help="web-grounded answer with citations")
